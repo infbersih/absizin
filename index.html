@@ -74,17 +74,20 @@ sendBtn.addEventListener('click',()=>{
   fetch(webhookURL,{
     method:"POST",
     body:JSON.stringify({
-      timestamp:timestamp,
-      kondisi:kondisi,
       nis:scanParts[0],
       nama:scanParts[1],
       kelas:scanParts[2],
       hp1:scanParts[3],
-      hp2:scanParts[4]
+      hp2:scanParts[4],
+      kondisi:kondisi,
+      timestamp:timestamp
+      
     }),
     headers:{"Content-Type":"application/json"}
-  }).then(res=>res.text()).then(text=>console.log("Response:",text))
-  .catch(err=>console.error("Gagal kirim ke sheet",err));
+  })
+  .then(res => res.text())
+  .then(txt => console.log("Response:", txt))
+  .catch(err => console.error("Error:", err));
 
   // Kirim WhatsApp
   const hp2Clean=scanParts[4].replace(/\D/g,'');
