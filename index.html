@@ -1,57 +1,103 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8">
-  <title>Kirim Data ke Google Sheet</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Absensi QR + WA</title>
+<script src="https://unpkg.com/html5-qrcode"></script>
+<style>
+body { font-family: sans-serif; text-align:center; padding:10px; margin:0; min-height:100vh; background:linear-gradient(135deg,#a8ffb0,#d9a8ff);}
+h2 {color:#333;text-shadow:1px 1px 2px rgba(255,255,255,0.6);}
+#result {font-size:1.1em;margin-top:10px;background:rgba(255,255,255,0.8);display:inline-block;padding:8px 12px;border-radius:8px;max-width:95%;word-wrap:break-word;}
+select, #sendBtn {margin-top:12px;padding:8px;font-size:1em;border-radius:6px;border:1px solid #aaa;}
+#sendBtn {background-color:green;color:white;border:none;cursor:pointer;box-shadow:2px 2px 5px rgba(0,0,0,0.2);}
+#sendBtn:hover {background-color:darkgreen;}
+#reader {width:100%; max-width:320px;margin:auto;}
+</style>
 </head>
 <body>
-  <h2>Form Absensi</h2>
-  <form id="absensiForm">
-    <label>NIS: <input type="text" id="nis" required></label><br>
-    <label>Nama: <input type="text" id="nama" required></label><br>
-    <label>Kelas: <input type="text" id="kelas" required></label><br>
-    <label>HP1: <input type="text" id="hp1"></label><br>
-    <label>HP2: <input type="text" id="hp2"></label><br>
-    <label>Kondisi: 
-      <select id="kondisi">
-        <option value="Masuk">Masuk</option>
-        <option value="Izin">Izin</option>
-        <option value="Sakit">Sakit</option>
-        <option value="Alpa">Alpa</option>
-      </select>
-    </label><br>
-    <button type="submit">Kirim</button>
-  </form>
+<h2>Scan Kartu Absensi</h2>
+<div id="reader"></div>
+<div id="result">Hasil scan akan muncul di sini</div>
 
-  <script>
-    // Ganti dengan URL Web App dari Apps Script
-    const webhookURL = "https://script.google.com/macros/s/AKfycbw6rhiczJ0qEkeI00e_WhMiL5Pt8GrCsgOn4t1Gd_otCMzIGpFtpwN5fR7VeB0xXElF0w/exec";
+<div>
+<select id="kondisiSelect" style="display:none;">
+  <option value="Masuk">Masuk</option>
+  <option value="Izin Keluar">Izin Keluar</option>
+  <option value="Kembali">Kembali</option>
+  <option value="Pulang">Pulang</option>
+</select>
+</div>
+<br>
+<button id="sendBtn" style="display:none;">Kirim ke WhatsApp & Simpan</button>
 
-    document.getElementById("absensiForm").addEventListener("submit", function(e) {
-      e.preventDefault();
+<script>
+const resultEl=document.getElementById('result');
+const sendBtn=document.getElementById('sendBtn');
+const kondisiSelect=document.getElementById('kondisiSelect');
+let scanParts=[];
 
-      const data = {
-        nis: document.getElementById("nis").value,
-        nama: document.getElementById("nama").value,
-        kelas: document.getElementById("kelas").value,
-        hp1: document.getElementById("hp1").value,
-        hp2: document.getElementById("hp2").value,
-        kondisi: document.getElementById("kondisi").value,
-        timestamp: new Date().toLocaleString()
-      };
+// Ganti dengan URL Web App Google Apps Script
+const webhookURL="https://script.google.com/macros/s/AKfycbw6rhiczJ0qEkeI00e_WhMiL5Pt8GrCsgOn4t1Gd_otCMzIGpFtpwN5fR7VeB0xXElF0w/exec";
 
-      fetch(webhookURL, {
-        method: "POST",
-        body: JSON.stringify(data),
-        headers: { "Content-Type": "application/json" }
-      })
-      .then(res => res.text())
-      .then(txt => {
-        alert("Respon server: " + txt);
-        document.getElementById("absensiForm").reset();
-      })
-      .catch(err => alert("Gagal kirim: " + err));
-    });
-  </script>
+function onScanSuccess(decodedText){
+  scanParts=decodedText.split(",");
+  if(scanParts.length<5){
+    resultEl.textContent="Format QR Code tidak valid!";
+    kondisiSelect.style.display='none';
+    sendBtn.style.display='none';
+    return;
+  }
+  resultEl.textContent=`NIS: ${scanParts[0]} | Nama: ${scanParts[1]} | Kelas: ${scanParts[2]} | HP1: ${scanParts[3]} | HP2: ${scanParts[4]}`;
+  kondisiSelect.style.display='inline-block';
+  sendBtn.style.display='inline-block';
+}
+
+// Mulai kamera
+const html5QrCode=new Html5Qrcode("reader");
+Html5Qrcode.getCameras().then(cameras=>{
+  if(cameras && cameras.length){
+    let cameraId=cameras.length>1?cameras[1].id:cameras[0].id;
+    html5QrCode.start({deviceId:{exact:cameraId}},{fps:10,qrbox:{width:250,height:250}},onScanSuccess)
+      .catch(err=>resultEl.textContent="Error kamera: "+err);
+  }else{
+    resultEl.textContent="Tidak ada kamera terdeteksi";
+  }
+}).catch(err=>resultEl.textContent="Gagal mengakses kamera: "+err);
+
+sendBtn.addEventListener('click',()=>{
+  if(scanParts.length<5){alert("Belum ada hasil scan yang valid!"); return;}
+  const kondisi=kondisiSelect.value;
+  const timestamp=new Date().toLocaleTimeString('id-ID',{hour12:false});
+
+  // Simpan ke Google Sheets
+  fetch(webhookURL,{
+    method:"POST",
+    body:JSON.stringify({
+      timestamp:timestamp,
+      kondisi:kondisi,
+      nis:scanParts[0],
+      nama:scanParts[1],
+      kelas:scanParts[2],
+      hp1:scanParts[3],
+      hp2:scanParts[4]
+    }),
+    headers:{"Content-Type":"application/json"}
+  }).then(res=>res.text()).then(text=>console.log("Response:",text))
+  .catch(err=>console.error("Gagal kirim ke sheet",err));
+
+  // Kirim WhatsApp
+  const hp2Clean=scanParts[4].replace(/\D/g,'');
+  const pesan=`Assalamu'alaikum wr.wb.%0A`+
+    `Dengan ini kami sampaikan :%0A%0A`+
+    `Nama: ${encodeURIComponent(scanParts[1])}%0A`+
+    `NIS: ${encodeURIComponent(scanParts[0])}%0A`+
+    `Kelas: ${encodeURIComponent(scanParts[2])}%0A`+
+    `Keterangan: ${encodeURIComponent(kondisi)}%0A`+
+    `Waktu: ${timestamp}%0A%0ATerima kasih`;
+
+  window.open(`https://wa.me/${hp2Clean}?text=${pesan}`,'_blank');
+});
+</script>
 </body>
 </html>
