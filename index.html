@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Absensi</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    body { 
+      font-family: sans-serif; 
+      text-align: center; 
+      padding: 10px; 
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #a8ffb0, #d9a8ff);
+    }
+    h2 {
+      color: #333;
+      text-shadow: 1px 1px 2px rgba(255,255,255,0.6);
+    }
+    #result { 
+      font-size: 1.1em; 
+      margin-top: 10px; 
+      background: rgba(255,255,255,0.8);
+      display: inline-block;
+      padding: 8px 12px;
+      border-radius: 8px;
+      max-width: 95%;
+      word-wrap: break-word;
+    }
+    select, #sendBtn {
+      margin-top: 12px;
+      padding: 8px;
+      font-size: 1em;
+      border-radius: 6px;
+      border: 1px solid #aaa;
+    }
+    #sendBtn {
+      background-color: green;
+      color: white;
+      border: none;
+      cursor: pointer;
+      box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+    }
+    #sendBtn:hover { background-color: darkgreen; }
+    #reader {
+      width: 100%;
+      max-width: 320px;
+      margin: auto;
+    }
+  </style>
+</head>
+<body>
+  <h2>Scan Kartu Absensi</h2>
+  <div id="reader"></div>
+  <div id="result">Hasil scan akan muncul di sini</div>
+  
+  <div>
+    <select id="kondisiSelect" style="display:none;">
+      <option value="Masuk">Masuk</option>
+      <option value="Izin Keluar">Izin Keluar</option>
+      <option value="Kembali">Kembali</option>
+      <option value="Pulang">Pulang</option>
+    </select>
+  </div>
+  
+  <br>
+  <button id="sendBtn" style="display:none;">Kirim ke WhatsApp & Simpan</button>
+
+  <script>
+    const resultEl = document.getElementById('result');
+    const sendBtn = document.getElementById('sendBtn');
+    const kondisiSelect = document.getElementById('kondisiSelect');
+    let scanParts = [];
+    
+    // Ganti dengan URL Web App Google Apps Script
+    const webhookURL = "https://script.google.com/macros/s/AKfycbxQb0bRB7yr1s5ErVpucjpFNrGeXBP-rXb_h_ryqHLSfT0H3syJTVIMnZg2gIoPTBmfPQ/exec";  
+
+    function onScanSuccess(decodedText) {
+      scanParts = decodedText.split(",");
+      if (scanParts.length < 5) {
+        resultEl.textContent = "Format QR Code tidak valid!";
+        kondisiSelect.style.display = 'none';
+        sendBtn.style.display = 'none';
+        return;
+      }
+      resultEl.textContent = 
+        `NIS: ${scanParts[0]} | Nama: ${scanParts[1]} | Kelas: ${scanParts[2]} | HP1: ${scanParts[3]} | HP2: ${scanParts[4]}`;
+      kondisiSelect.style.display = 'inline-block';
+      sendBtn.style.display = 'inline-block';
+    }
+
+    // Mulai kamera (otomatis pilih kamera belakang jika ada)
+    const html5QrCode = new Html5Qrcode("reader");
+    Html5Qrcode.getCameras().then(cameras => {
+      if (cameras && cameras.length) {
+        let cameraId = cameras.length > 1 ? cameras[1].id : cameras[0].id;
+        html5QrCode.start(
+          { deviceId: { exact: cameraId } },
+          { fps: 10, qrbox: { width: 250, height: 250 } },
+          onScanSuccess
+        ).catch(err => resultEl.textContent = "Error kamera: " + err);
+      } else {
+        resultEl.textContent = "Tidak ada kamera terdeteksi";
+      }
+    }).catch(err => resultEl.textContent = "Gagal mengakses kamera: " + err);
+
+    sendBtn.addEventListener('click', () => {
+      if (scanParts.length < 5) {
+        alert("Belum ada hasil scan yang valid!");
+        return;
+      }
+      const kondisi = kondisiSelect.value;
+      const timestamp = new Date().toLocaleTimeString('id-ID', { hour12: false });
+      
+      // Simpan ke Google Sheets via Apps Script Webhook
+      fetch(webhookURL, {
+        method: "POST",
+        body: JSON.stringify({ 
+          timestamp: timestamp,
+          kondisi: kondisi,
+          nis: scanParts[0],
+          nama: scanParts[1],
+          kelas: scanParts[2],
+          hp1: scanParts[3],
+          hp2: scanParts[4]
+        }),
+        headers: { "Content-Type": "application/json" }
+      }).then(res => console.log("Tersimpan di Spreadsheet"))
+        .catch(err => console.error("Gagal kirim ke sheet", err));
+
+      // Kirim WhatsApp (pakai HP2)
+      const hp2Clean = scanParts[4].replace(/\D/g, '');
+      const pesan = 
+        `Assalamu'alaikum wr.wb.%0A` +
+        `Dengan ini kami sampaikan :%0A%0A`+
+        `Nama: ${encodeURIComponent(scanParts[1])}%0A`+
+        `NIS: ${encodeURIComponent(scanParts[0])}%0A`+
+        `Kelas: ${encodeURIComponent(scanParts[2])}%0A` +
+        `Keterangan: ${encodeURIComponent(kondisi)}%0A` +
+        `Waktu: ${timestamp}%0A%0A`+
+        `Terima kasih`;
+
+      window.open(`https://wa.me/${hp2Clean}?text=${pesan}`, '_blank');
+    });
+  </script>
+</body>
+</html>
